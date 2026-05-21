@@ -126,10 +126,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { question, subject, grade } = await request.json();
+  const { question, subject, grade, imageBase64, imageMimeType } = await request.json();
 
-  if (!question?.trim()) {
-    return Response.json({ error: "質問を入力してください" }, { status: 400 });
+  const hasText = typeof question === "string" && question.trim().length > 0;
+  const hasImage = typeof imageBase64 === "string" && imageBase64.length > 0;
+
+  if (!hasText && !hasImage) {
+    return Response.json(
+      { error: "質問を入力するか、写真を送ってください" },
+      { status: 400 }
+    );
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -155,13 +161,27 @@ export async function POST(request: Request) {
   const model = genAI.getGenerativeModel({ model: modelName });
 
   const subjectLabel = SUBJECT_LABELS[subject] ?? subject ?? "全般";
-  const userPrompt = `教科: ${subjectLabel}\n学年: ${grade ?? "未指定"}\n\n質問: ${question}`;
+  const questionText = hasText ? question.trim() : "（写真の問題を解いてください）";
+  const userPrompt = `教科: ${subjectLabel}\n学年: ${grade ?? "未指定"}\n\n質問: ${questionText}`;
+
+  // コンテンツ配列を組み立て（画像があれば含める）
+  type ContentPart =
+    | { text: string }
+    | { inlineData: { mimeType: string; data: string } };
+
+  const contentParts: ContentPart[] = [{ text: SYSTEM_PROMPT }, { text: userPrompt }];
+
+  if (hasImage) {
+    contentParts.push({
+      inlineData: {
+        mimeType: imageMimeType ?? "image/jpeg",
+        data: imageBase64,
+      },
+    });
+  }
 
   try {
-    const result = await model.generateContent([
-      { text: SYSTEM_PROMPT },
-      { text: userPrompt },
-    ]);
+    const result = await model.generateContent(contentParts);
 
     const text = result.response.text().trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);

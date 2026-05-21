@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import HintCard from "./HintCard";
 
@@ -55,20 +55,24 @@ const GRADES: Grade[] = [
 
 export default function ChatInterface() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [schoolLevel, setSchoolLevel] = useState<"elementary" | "middle">("elementary");
   const [grade, setGrade] = useState("小学4年生");
   const [subject, setSubject] = useState("arithmetic");
   const [question, setQuestion] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageData, setImageData] = useState<{ base64: string; mimeType: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<HintResult | null>(null);
   const [error, setError] = useState("");
   const [revealedHints, setRevealedHints] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [submittedImage, setSubmittedImage] = useState<string | null>(null);
 
   const filteredSubjects = SUBJECTS.filter(
     (s) => s.school === schoolLevel || s.school === "both"
   );
-
   const filteredGrades = GRADES.filter((g) => g.school === schoolLevel);
 
   function handleSchoolChange(level: "elementary" | "middle") {
@@ -80,9 +84,31 @@ export default function ChatInterface() {
     setShowAnswer(false);
   }
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setImagePreview(dataUrl);
+      // data:image/jpeg;base64,XXXX → base64部分だけ取り出す
+      const [meta, base64] = dataUrl.split(",");
+      const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+      setImageData({ base64, mimeType });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeImage() {
+    setImagePreview(null);
+    setImageData(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!question.trim() && !imageData) return;
 
     setLoading(true);
     setError("");
@@ -93,7 +119,13 @@ export default function ChatInterface() {
     const res = await fetch("/api/hint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, subject, grade }),
+      body: JSON.stringify({
+        question,
+        subject,
+        grade,
+        imageBase64: imageData?.base64 ?? null,
+        imageMimeType: imageData?.mimeType ?? null,
+      }),
     });
 
     setLoading(false);
@@ -110,6 +142,7 @@ export default function ChatInterface() {
       return;
     }
 
+    setSubmittedImage(imagePreview);
     setResult(data);
     setRevealedHints(1);
   }
@@ -122,10 +155,16 @@ export default function ChatInterface() {
   function reset() {
     setResult(null);
     setQuestion("");
+    setImagePreview(null);
+    setImageData(null);
+    setSubmittedImage(null);
     setRevealedHints(0);
     setShowAnswer(false);
     setError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
+
+  const canSubmit = !loading && (question.trim().length > 0 || imageData !== null);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -145,7 +184,7 @@ export default function ChatInterface() {
       <main className="flex-1 max-w-2xl mx-auto w-full p-4 space-y-4">
         {!result ? (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* School level tabs */}
+            {/* School level / Grade / Subject */}
             <div className="bg-white rounded-2xl shadow p-4 space-y-3">
               <div className="flex rounded-xl overflow-hidden border border-indigo-200">
                 <button
@@ -172,11 +211,8 @@ export default function ChatInterface() {
                 </button>
               </div>
 
-              {/* Grade select */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  学年
-                </label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">学年</label>
                 <div className="flex flex-wrap gap-2">
                   {filteredGrades.map((g) => (
                     <button
@@ -195,11 +231,8 @@ export default function ChatInterface() {
                 </div>
               </div>
 
-              {/* Subject select */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  教科
-                </label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">教科</label>
                 <div className="flex flex-wrap gap-2">
                   {filteredSubjects.map((s) => (
                     <button
@@ -220,25 +253,67 @@ export default function ChatInterface() {
               </div>
             </div>
 
-            {/* Question input */}
+            {/* Question + Image input */}
             <div className="bg-white rounded-2xl shadow p-4 space-y-3">
               <label className="block text-sm font-medium text-gray-700">
-                わからないことを入力してください
+                問題を入力 または 写真を送る
               </label>
+
+              {/* Image preview */}
+              {imagePreview && (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imagePreview}
+                    alt="問題の写真"
+                    className="w-full max-h-64 object-contain rounded-xl border border-gray-200 bg-gray-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm hover:bg-red-600 transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
-                placeholder="例：分数のたし算のやり方がわからない&#10;例：光合成とはなんですか？"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 min-h-[100px]"
+                placeholder={
+                  imagePreview
+                    ? "写真についてメモを追加できます（任意）"
+                    : "例：分数のたし算のやり方がわからない\n例：光合成とはなんですか？"
+                }
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 min-h-[80px]"
               />
 
-              {error && (
-                <p className="text-red-500 text-sm">{error}</p>
-              )}
+              {/* Camera / file button */}
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-indigo-300 text-indigo-600 font-medium py-3 rounded-xl hover:bg-indigo-50 transition text-sm"
+                >
+                  <span className="text-xl">📷</span>
+                  {imagePreview ? "写真を撮り直す" : "問題を写真で送る"}
+                </button>
+              </div>
+
+              {error && <p className="text-red-500 text-sm">{error}</p>}
 
               <button
                 type="submit"
-                disabled={loading || !question.trim()}
+                disabled={!canSubmit}
                 className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
@@ -258,16 +333,22 @@ export default function ChatInterface() {
         ) : (
           <div className="space-y-3">
             {/* Question recap */}
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="flex items-start gap-2">
+            <div className="bg-white rounded-2xl shadow p-4 space-y-2">
+              <div className="flex items-center gap-2">
                 <span className="text-xl">❓</span>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">
-                    {grade} · {result.subject}
-                  </p>
-                  <p className="text-gray-800 font-medium">{question}</p>
-                </div>
+                <p className="text-xs text-gray-500">{grade} · {result.subject}</p>
               </div>
+              {submittedImage && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={submittedImage}
+                  alt="送った問題の写真"
+                  className="w-full max-h-48 object-contain rounded-xl border border-gray-200 bg-gray-50"
+                />
+              )}
+              {question && (
+                <p className="text-gray-800 font-medium text-sm">{question}</p>
+              )}
             </div>
 
             {/* Encouragement */}
@@ -276,12 +357,7 @@ export default function ChatInterface() {
               <span>{result.encouragement}</span>
             </div>
 
-            {/* Hints */}
-            <HintCard
-              index={1}
-              content={result.hint1}
-              revealed={revealedHints >= 1}
-            />
+            <HintCard index={1} content={result.hint1} revealed={revealedHints >= 1} />
             {revealedHints >= 1 && (
               <HintCard
                 index={2}
@@ -299,7 +375,6 @@ export default function ChatInterface() {
               />
             )}
 
-            {/* Show answer */}
             {revealedHints >= 3 && !showAnswer && (
               <button
                 onClick={() => setShowAnswer(true)}
@@ -315,13 +390,10 @@ export default function ChatInterface() {
                   <span>📝</span>
                   <span className="font-bold text-green-800">答え</span>
                 </div>
-                <p className="text-gray-800 text-sm leading-relaxed">
-                  {result.answer}
-                </p>
+                <p className="text-gray-800 text-sm leading-relaxed">{result.answer}</p>
               </div>
             )}
 
-            {/* New question button */}
             <button
               onClick={reset}
               className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition"
