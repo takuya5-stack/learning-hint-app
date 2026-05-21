@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import HintCard from "./HintCard";
+import ImageCropper from "./ImageCropper";
 
 type Subject = {
   value: string;
@@ -61,6 +62,7 @@ export default function ChatInterface() {
   const [grade, setGrade] = useState("小学4年生");
   const [subject, setSubject] = useState("arithmetic");
   const [question, setQuestion] = useState("");
+  const [cropSrc, setCropSrc] = useState<string | null>(null); // クロッパー用の元画像
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<{ base64: string; mimeType: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -91,18 +93,38 @@ export default function ChatInterface() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      setImagePreview(dataUrl);
-      // data:image/jpeg;base64,XXXX → base64部分だけ取り出す
-      const [meta, base64] = dataUrl.split(",");
-      const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
-      setImageData({ base64, mimeType });
+      // まずクロッパーを表示する
+      setCropSrc(dataUrl);
+      setImagePreview(null);
+      setImageData(null);
     };
     reader.readAsDataURL(file);
+  }
+
+  function handleCropConfirm(croppedDataUrl: string, croppedBase64: string, mimeType: string) {
+    setImagePreview(croppedDataUrl);
+    setImageData({ base64: croppedBase64, mimeType });
+    setCropSrc(null);
+  }
+
+  function handleCropUseWhole() {
+    if (!cropSrc) return;
+    const [meta, base64] = cropSrc.split(",");
+    const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+    setImagePreview(cropSrc);
+    setImageData({ base64, mimeType });
+    setCropSrc(null);
+  }
+
+  function handleCropCancel() {
+    setCropSrc(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function removeImage() {
     setImagePreview(null);
     setImageData(null);
+    setCropSrc(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -158,6 +180,7 @@ export default function ChatInterface() {
     setImagePreview(null);
     setImageData(null);
     setSubmittedImage(null);
+    setCropSrc(null);
     setRevealedHints(0);
     setShowAnswer(false);
     setError("");
@@ -182,7 +205,19 @@ export default function ChatInterface() {
       </header>
 
       <main className="flex-1 max-w-2xl mx-auto w-full p-4 space-y-4">
-        {!result ? (
+        {/* クロッパー表示中はフォームを隠してクロッパーのみ表示 */}
+        {cropSrc && (
+          <div className="bg-white rounded-2xl shadow p-4">
+            <ImageCropper
+              src={cropSrc}
+              onConfirm={handleCropConfirm}
+              onUseWhole={handleCropUseWhole}
+              onCancel={handleCropCancel}
+            />
+          </div>
+        )}
+
+        {!cropSrc && !result ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* School level / Grade / Subject */}
             <div className="bg-white rounded-2xl shadow p-4 space-y-3">
@@ -336,7 +371,7 @@ export default function ChatInterface() {
             <div className="bg-white rounded-2xl shadow p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-xl">❓</span>
-                <p className="text-xs text-gray-500">{grade} · {result.subject}</p>
+                <p className="text-xs text-gray-500">{grade} · {result?.subject}</p>
               </div>
               {submittedImage && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -354,14 +389,14 @@ export default function ChatInterface() {
             {/* Encouragement */}
             <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-3 text-sm text-yellow-800 flex items-start gap-2">
               <span>✨</span>
-              <span>{result.encouragement}</span>
+              <span>{result?.encouragement}</span>
             </div>
 
-            <HintCard index={1} content={result.hint1} revealed={revealedHints >= 1} />
+            <HintCard index={1} content={result?.hint1 ?? ""} revealed={revealedHints >= 1} />
             {revealedHints >= 1 && (
               <HintCard
                 index={2}
-                content={result.hint2}
+                content={result?.hint2 ?? ""}
                 revealed={revealedHints >= 2}
                 onReveal={revealedHints === 1 ? () => setRevealedHints(2) : undefined}
               />
@@ -369,7 +404,7 @@ export default function ChatInterface() {
             {revealedHints >= 2 && (
               <HintCard
                 index={3}
-                content={result.hint3}
+                content={result?.hint3 ?? ""}
                 revealed={revealedHints >= 3}
                 onReveal={revealedHints === 2 ? () => setRevealedHints(3) : undefined}
               />
@@ -390,7 +425,7 @@ export default function ChatInterface() {
                   <span>📝</span>
                   <span className="font-bold text-green-800">答え</span>
                 </div>
-                <p className="text-gray-800 text-sm leading-relaxed">{result.answer}</p>
+                <p className="text-gray-800 text-sm leading-relaxed">{result?.answer}</p>
               </div>
             )}
 
