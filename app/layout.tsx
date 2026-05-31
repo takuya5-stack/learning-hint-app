@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "まなびヒントくん",
+  title: "SSG質問アプリ",
   description: "学習指導要領に沿って、3段階のヒントで答えを導くアプリ",
 };
 

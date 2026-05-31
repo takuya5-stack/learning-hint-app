@@ -35,7 +35,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-6xl mb-4">📚</div>
-          <h1 className="text-3xl font-bold text-indigo-900">まなびヒントくん</h1>
+          <h1 className="text-3xl font-bold text-indigo-900">SSG質問アプリ</h1>
           <p className="text-indigo-600 mt-2 text-sm">
             学習指導要領に沿って、3段階のヒントでサポート
           </p>

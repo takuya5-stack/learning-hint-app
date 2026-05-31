@@ -5,17 +5,19 @@ import { useRouter } from "next/navigation";
 import HintCard from "./HintCard";
 import ImageCropper from "./ImageCropper";
 
+type SchoolLevel = "elementary" | "middle" | "high";
+
 type Subject = {
   value: string;
   label: string;
   emoji: string;
-  school: "elementary" | "middle" | "both";
+  school: SchoolLevel | "all";
 };
 
 type Grade = {
   value: string;
   label: string;
-  school: "elementary" | "middle";
+  school: SchoolLevel;
 };
 
 type HintResult = {
@@ -29,17 +31,33 @@ type HintResult = {
 };
 
 const SUBJECTS: Subject[] = [
+  // 小学校
   { value: "arithmetic", label: "算数", emoji: "🔢", school: "elementary" },
-  { value: "math", label: "数学", emoji: "📐", school: "middle" },
-  { value: "japanese", label: "国語", emoji: "📖", school: "both" },
-  { value: "science", label: "理科", emoji: "🔬", school: "both" },
-  { value: "social", label: "社会", emoji: "🌍", school: "both" },
-  { value: "english", label: "英語", emoji: "🗣️", school: "both" },
-  { value: "moral", label: "道徳", emoji: "🌱", school: "both" },
-  { value: "music", label: "音楽", emoji: "🎵", school: "both" },
-  { value: "art", label: "図画工作・美術", emoji: "🎨", school: "both" },
-  { value: "pe", label: "体育・保健体育", emoji: "⚽", school: "both" },
-  { value: "home", label: "家庭科・技術家庭", emoji: "🍳", school: "both" },
+  // 中学校
+  { value: "math_middle", label: "数学", emoji: "📐", school: "middle" },
+  // 高校
+  { value: "math_high", label: "数学", emoji: "📐", school: "high" },
+  { value: "physics", label: "物理", emoji: "⚡", school: "high" },
+  { value: "chemistry", label: "化学", emoji: "🧪", school: "high" },
+  { value: "biology", label: "生物", emoji: "🌿", school: "high" },
+  { value: "earth_science", label: "地学", emoji: "🌏", school: "high" },
+  { value: "j_lit", label: "現代文", emoji: "📰", school: "high" },
+  { value: "classical", label: "古文・漢文", emoji: "📜", school: "high" },
+  { value: "world_history", label: "世界史", emoji: "🏛️", school: "high" },
+  { value: "jpn_history", label: "日本史", emoji: "⛩️", school: "high" },
+  { value: "geography", label: "地理", emoji: "🗾", school: "high" },
+  { value: "civics", label: "政治・経済・倫理", emoji: "⚖️", school: "high" },
+  { value: "info", label: "情報", emoji: "💻", school: "high" },
+  // 共通
+  { value: "japanese", label: "国語", emoji: "📖", school: "all" },
+  { value: "science", label: "理科", emoji: "🔬", school: "all" },
+  { value: "social", label: "社会", emoji: "🌍", school: "all" },
+  { value: "english", label: "英語", emoji: "🗣️", school: "all" },
+  { value: "moral", label: "道徳", emoji: "🌱", school: "all" },
+  { value: "music", label: "音楽", emoji: "🎵", school: "all" },
+  { value: "art", label: "図画工作・美術", emoji: "🎨", school: "all" },
+  { value: "pe", label: "体育・保健", emoji: "⚽", school: "all" },
+  { value: "home", label: "家庭科・技術", emoji: "🍳", school: "all" },
 ];
 
 const GRADES: Grade[] = [
@@ -52,17 +70,32 @@ const GRADES: Grade[] = [
   { value: "中学1年生", label: "中1", school: "middle" },
   { value: "中学2年生", label: "中2", school: "middle" },
   { value: "中学3年生", label: "中3", school: "middle" },
+  { value: "高校1年生", label: "高1", school: "high" },
+  { value: "高校2年生", label: "高2", school: "high" },
+  { value: "高校3年生", label: "高3", school: "high" },
 ];
+
+const DEFAULT_SUBJECT: Record<SchoolLevel, string> = {
+  elementary: "arithmetic",
+  middle: "math_middle",
+  high: "math_high",
+};
+
+const DEFAULT_GRADE: Record<SchoolLevel, string> = {
+  elementary: "小学4年生",
+  middle: "中学1年生",
+  high: "高校1年生",
+};
 
 export default function ChatInterface() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [schoolLevel, setSchoolLevel] = useState<"elementary" | "middle">("elementary");
+  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>("elementary");
   const [grade, setGrade] = useState("小学4年生");
   const [subject, setSubject] = useState("arithmetic");
   const [question, setQuestion] = useState("");
-  const [cropSrc, setCropSrc] = useState<string | null>(null); // クロッパー用の元画像
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<{ base64: string; mimeType: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,14 +106,14 @@ export default function ChatInterface() {
   const [submittedImage, setSubmittedImage] = useState<string | null>(null);
 
   const filteredSubjects = SUBJECTS.filter(
-    (s) => s.school === schoolLevel || s.school === "both"
+    (s) => s.school === schoolLevel || s.school === "all"
   );
   const filteredGrades = GRADES.filter((g) => g.school === schoolLevel);
 
-  function handleSchoolChange(level: "elementary" | "middle") {
+  function handleSchoolChange(level: SchoolLevel) {
     setSchoolLevel(level);
-    setGrade(level === "elementary" ? "小学4年生" : "中学1年生");
-    setSubject(level === "elementary" ? "arithmetic" : "math");
+    setGrade(DEFAULT_GRADE[level]);
+    setSubject(DEFAULT_SUBJECT[level]);
     setResult(null);
     setRevealedHints(0);
     setShowAnswer(false);
@@ -89,12 +122,9 @@ export default function ChatInterface() {
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      // まずクロッパーを表示する
-      setCropSrc(dataUrl);
+      setCropSrc(ev.target?.result as string);
       setImagePreview(null);
       setImageData(null);
     };
@@ -152,17 +182,10 @@ export default function ChatInterface() {
 
     setLoading(false);
 
-    if (res.status === 401) {
-      router.push("/");
-      return;
-    }
+    if (res.status === 401) { router.push("/"); return; }
 
     const data = await res.json();
-
-    if (!res.ok) {
-      setError(data.error ?? "エラーが発生しました");
-      return;
-    }
+    if (!res.ok) { setError(data.error ?? "エラーが発生しました"); return; }
 
     setSubmittedImage(imagePreview);
     setResult(data);
@@ -189,12 +212,18 @@ export default function ChatInterface() {
 
   const canSubmit = !loading && (question.trim().length > 0 || imageData !== null);
 
+  const SCHOOL_TABS: { level: SchoolLevel; label: string }[] = [
+    { level: "elementary", label: "小学校" },
+    { level: "middle", label: "中学校" },
+    { level: "high", label: "高校" },
+  ];
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-indigo-700 text-white px-4 py-3 flex items-center justify-between shadow">
         <div className="flex items-center gap-2">
           <span className="text-2xl">📚</span>
-          <span className="font-bold text-lg">まなびヒントくん</span>
+          <span className="font-bold text-lg">SSG質問アプリ</span>
         </div>
         <button
           onClick={handleLogout}
@@ -205,7 +234,6 @@ export default function ChatInterface() {
       </header>
 
       <main className="flex-1 max-w-2xl mx-auto w-full p-4 space-y-4">
-        {/* クロッパー表示中はフォームを隠してクロッパーのみ表示 */}
         {cropSrc && (
           <div className="bg-white rounded-2xl shadow p-4">
             <ImageCropper
@@ -219,33 +247,26 @@ export default function ChatInterface() {
 
         {!cropSrc && !result ? (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* School level / Grade / Subject */}
             <div className="bg-white rounded-2xl shadow p-4 space-y-3">
+              {/* 学校区分タブ */}
               <div className="flex rounded-xl overflow-hidden border border-indigo-200">
-                <button
-                  type="button"
-                  onClick={() => handleSchoolChange("elementary")}
-                  className={`flex-1 py-2 text-sm font-bold transition ${
-                    schoolLevel === "elementary"
-                      ? "bg-indigo-600 text-white"
-                      : "text-indigo-600 hover:bg-indigo-50"
-                  }`}
-                >
-                  小学校
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSchoolChange("middle")}
-                  className={`flex-1 py-2 text-sm font-bold transition ${
-                    schoolLevel === "middle"
-                      ? "bg-indigo-600 text-white"
-                      : "text-indigo-600 hover:bg-indigo-50"
-                  }`}
-                >
-                  中学校
-                </button>
+                {SCHOOL_TABS.map(({ level, label }) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => handleSchoolChange(level)}
+                    className={`flex-1 py-2 text-sm font-bold transition ${
+                      schoolLevel === level
+                        ? "bg-indigo-600 text-white"
+                        : "text-indigo-600 hover:bg-indigo-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
 
+              {/* 学年 */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">学年</label>
                 <div className="flex flex-wrap gap-2">
@@ -266,6 +287,7 @@ export default function ChatInterface() {
                 </div>
               </div>
 
+              {/* 教科 */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">教科</label>
                 <div className="flex flex-wrap gap-2">
@@ -288,13 +310,12 @@ export default function ChatInterface() {
               </div>
             </div>
 
-            {/* Question + Image input */}
+            {/* 質問入力 */}
             <div className="bg-white rounded-2xl shadow p-4 space-y-3">
               <label className="block text-sm font-medium text-gray-700">
                 問題を入力 または 写真を送る
               </label>
 
-              {/* Image preview */}
               {imagePreview && (
                 <div className="relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -319,12 +340,11 @@ export default function ChatInterface() {
                 placeholder={
                   imagePreview
                     ? "写真についてメモを追加できます（任意）"
-                    : "例：分数のたし算のやり方がわからない\n例：光合成とはなんですか？"
+                    : "例：二次方程式の解き方がわからない\n例：光合成の仕組みを教えて"
                 }
                 className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 min-h-[80px]"
               />
 
-              {/* Camera / file button */}
               <div>
                 <input
                   ref={fileInputRef}
@@ -352,22 +372,15 @@ export default function ChatInterface() {
                 className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
-                  <>
-                    <span className="animate-spin">⏳</span>
-                    ヒントを考え中...
-                  </>
+                  <><span className="animate-spin">⏳</span>ヒントを考え中...</>
                 ) : (
-                  <>
-                    <span>💡</span>
-                    ヒントをもらう
-                  </>
+                  <><span>💡</span>ヒントをもらう</>
                 )}
               </button>
             </div>
           </form>
-        ) : (
+        ) : !cropSrc && result ? (
           <div className="space-y-3">
-            {/* Question recap */}
             <div className="bg-white rounded-2xl shadow p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-xl">❓</span>
@@ -386,7 +399,6 @@ export default function ChatInterface() {
               )}
             </div>
 
-            {/* Encouragement */}
             <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-3 text-sm text-yellow-800 flex items-start gap-2">
               <span>✨</span>
               <span>{result?.encouragement}</span>
@@ -436,7 +448,7 @@ export default function ChatInterface() {
               別の問題を聞く
             </button>
           </div>
-        )}
+        ) : null}
       </main>
     </div>
   );
