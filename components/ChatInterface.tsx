@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import HintCard from "./HintCard";
 import ImageCropper from "./ImageCropper";
+import ChatBox from "./ChatBox";
 
 type SchoolLevel = "elementary" | "middle" | "high";
 
@@ -440,6 +441,18 @@ export default function ChatInterface() {
                 <p className="text-gray-800 text-sm leading-relaxed">{result?.answer}</p>
               </div>
             )}
+
+            {/* チャット機能（ヒント1が表示されたら常に使える） */}
+            <ChatBox
+              subject={subject}
+              grade={grade}
+              originalQuestion={question}
+              hints={{
+                hint1: result?.hint1 ?? "",
+                hint2: result?.hint2 ?? "",
+                hint3: result?.hint3 ?? "",
+              }}
+            />
 
             <button
               onClick={reset}

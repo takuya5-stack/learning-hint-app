@@ -1,12 +1,9 @@
 import { cookies } from "next/headers";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getBestModel, getGenAI } from "@/lib/gemini";
 
-const SUBJECT_LABELS: Record<string, string> = {
-  // 小学校
+export const SUBJECT_LABELS: Record<string, string> = {
   arithmetic: "算数",
-  // 中学校
   math_middle: "数学",
-  // 高校
   math_high: "数学",
   physics: "物理",
   chemistry: "化学",
@@ -19,7 +16,6 @@ const SUBJECT_LABELS: Record<string, string> = {
   geography: "地理",
   civics: "政治・経済・倫理",
   info: "情報",
-  // 共通
   japanese: "国語",
   science: "理科",
   social: "社会",
@@ -57,91 +53,9 @@ const SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠した家
 
 JSONのみを返し、他のテキストは含めないこと。`;
 
-// --- モデル動的選択 ---
-
-type GeminiModel = {
-  name: string;
-  supportedGenerationMethods?: string[];
-};
-
-// 除外キーワード（テキスト生成に不向きな特殊モデル）
-const EXCLUDE_KEYWORDS = [
-  "tts", "image", "robotics", "computer-use", "deep-research",
-  "lyria", "gemma", "nano-banana", "clip", "customtools",
-];
-
-// モデル名からメジャー+マイナーバージョンを抽出（例: gemini-2.5-flash → 2.5）
-function extractVersion(name: string): number {
-  const m = name.match(/gemini-(\d+(?:\.\d+)?)/);
-  return m ? parseFloat(m[1]) : 0;
-}
-
-function selectBestModel(models: GeminiModel[]): string {
-  const candidates = models.filter((m) => {
-    const name = m.name.toLowerCase();
-    if (!(m.supportedGenerationMethods ?? []).includes("generateContent")) return false;
-    if (EXCLUDE_KEYWORDS.some((kw) => name.includes(kw))) return false;
-    return true;
-  });
-
-  candidates.sort((a, b) => {
-    const aName = a.name;
-    const bName = b.name;
-
-    // stable > preview (preview扱いはバージョン比較後に後回し)
-    const aIsPreview = aName.includes("preview") ? 1 : 0;
-    const bIsPreview = bName.includes("preview") ? 1 : 0;
-    if (aIsPreview !== bIsPreview) return aIsPreview - bIsPreview;
-
-    // バージョン番号が高い方を優先
-    const vDiff = extractVersion(bName) - extractVersion(aName);
-    if (Math.abs(vDiff) > 0.001) return vDiff;
-
-    // flash > pro（速度・コスト優先）
-    const aFlash = aName.includes("flash") ? 0 : 1;
-    const bFlash = bName.includes("flash") ? 0 : 1;
-    if (aFlash !== bFlash) return aFlash - bFlash;
-
-    // lite は最後
-    const aLite = aName.includes("lite") ? 1 : 0;
-    const bLite = bName.includes("lite") ? 1 : 0;
-    return aLite - bLite;
-  });
-
-  if (candidates.length === 0) throw new Error("No suitable Gemini model found");
-  return candidates[0].name.replace("models/", "");
-}
-
-// モジュールレベルキャッシュ（1時間）
-let _cachedModel: string | null = null;
-let _cacheExpiry = 0;
-
-async function getBestModel(apiKey: string): Promise<string> {
-  if (_cachedModel && Date.now() < _cacheExpiry) return _cachedModel;
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
-    { next: { revalidate: 3600 } }
-  );
-
-  if (!res.ok) throw new Error(`Models API error: ${res.status}`);
-
-  const data = await res.json();
-  const model = selectBestModel(data.models ?? []);
-
-  _cachedModel = model;
-  _cacheExpiry = Date.now() + 60 * 60 * 1000;
-
-  console.log(`[hint] Selected Gemini model: ${model}`);
-  return model;
-}
-
-// --- Route Handler ---
-
 export async function POST(request: Request) {
   const cookieStore = await cookies();
   const auth = cookieStore.get("auth_token");
-
   if (!auth || auth.value !== "authenticated") {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -160,10 +74,7 @@ export async function POST(request: Request) {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { error: "GEMINI_API_KEY が設定されていません" },
-      { status: 500 }
-    );
+    return Response.json({ error: "GEMINI_API_KEY が設定されていません" }, { status: 500 });
   }
 
   let modelName: string;
@@ -171,44 +82,31 @@ export async function POST(request: Request) {
     modelName = await getBestModel(apiKey);
   } catch (err) {
     console.error("Model selection error:", err);
-    return Response.json(
-      { error: "利用可能なモデルの取得に失敗しました" },
-      { status: 500 }
-    );
+    return Response.json({ error: "利用可能なモデルの取得に失敗しました" }, { status: 500 });
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const genAI = getGenAI(apiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
 
   const subjectLabel = SUBJECT_LABELS[subject] ?? subject ?? "全般";
   const questionText = hasText ? question.trim() : "（写真の問題を解いてください）";
   const userPrompt = `教科: ${subjectLabel}\n学年: ${grade ?? "未指定"}\n\n質問: ${questionText}`;
 
-  // コンテンツ配列を組み立て（画像があれば含める）
   type ContentPart =
     | { text: string }
     | { inlineData: { mimeType: string; data: string } };
 
   const contentParts: ContentPart[] = [{ text: SYSTEM_PROMPT }, { text: userPrompt }];
-
   if (hasImage) {
-    contentParts.push({
-      inlineData: {
-        mimeType: imageMimeType ?? "image/jpeg",
-        data: imageBase64,
-      },
-    });
+    contentParts.push({ inlineData: { mimeType: imageMimeType ?? "image/jpeg", data: imageBase64 } });
   }
 
   try {
     const result = await model.generateContent(contentParts);
-
     const text = result.response.text().trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Invalid JSON response from Gemini");
-
-    const data = JSON.parse(jsonMatch[0]);
-    return Response.json(data);
+    return Response.json(JSON.parse(jsonMatch[0]));
   } catch (err) {
     console.error(`Gemini error (model: ${modelName}):`, err);
     return Response.json(
