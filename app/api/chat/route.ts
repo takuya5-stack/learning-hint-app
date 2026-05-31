@@ -7,7 +7,8 @@ export type ChatMessage = {
   content: string;
 };
 
-const CHAT_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠した家庭教師です。
+// ヒントモードのフォローアップ用
+const FOLLOWUP_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠した家庭教師です。
 生徒が問題に取り組んでおり、すでに3段階のヒントが提示されています。
 生徒からの追加の質問に丁寧に答えてください。
 
@@ -19,6 +20,20 @@ const CHAT_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠し�
 - 励ましの言葉を添える
 - 返答は日本語のみ、マークダウンは使わない`;
 
+// チャットモード（自由な質問）用
+const STANDALONE_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠した家庭教師です。
+生徒がチャット形式で学習の質問をしてきます。
+
+指導方針：
+- 生徒の質問に対して、まず「どこでつまずいているか」を把握する
+- いきなり答えを与えず、「どう思う？」「まずここを考えてみよう」と問いかける
+- 生徒の考えを引き出しながら、一緒に考えるスタイルで進める
+- どうしても理解できない場合は、概念や解き方の流れを丁寧に説明する
+- 学年に合った言葉づかいをする（小学生：やさしく具体的、中学生：丁寧、高校生：専門用語OK）
+- 1回の返答は簡潔に。長くなりそうなら段階的に分けて答える
+- 返答は日本語のみ、マークダウンは使わない
+- 最初の挨拶は「こんにちは！何でも気軽に質問してね😊」`;
+
 export async function POST(request: Request) {
   const cookieStore = await cookies();
   const auth = cookieStore.get("auth_token");
@@ -26,12 +41,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { messages, subject, grade, originalQuestion, hints } = await request.json() as {
+  const {
+    messages,
+    subject,
+    grade,
+    originalQuestion,
+    hints,
+    mode = "followup",
+  } = await request.json() as {
     messages: ChatMessage[];
     subject: string;
     grade: string;
-    originalQuestion: string;
-    hints: { hint1: string; hint2: string; hint3: string };
+    originalQuestion?: string;
+    hints?: { hint1: string; hint2: string; hint3: string };
+    mode?: "followup" | "standalone";
   };
 
   if (!messages?.length) {
@@ -56,23 +79,33 @@ export async function POST(request: Request) {
 
   const subjectLabel = SUBJECT_LABELS[subject] ?? subject ?? "全般";
 
-  // コンテキスト情報（元の問題とヒント）
-  const contextBlock = `
-【授業のコンテキスト】
+  const conversationHistory = messages
+    .map((m) => `${m.role === "student" ? "生徒" : "先生"}: ${m.content}`)
+    .join("\n");
+
+  let fullPrompt: string;
+
+  if (mode === "standalone") {
+    fullPrompt = `${STANDALONE_SYSTEM_PROMPT}
+
+【授業情報】
+教科: ${subjectLabel}
+学年: ${grade}
+
+【会話履歴】
+${conversationHistory}
+
+先生:`;
+  } else {
+    const contextBlock = `【授業のコンテキスト】
 教科: ${subjectLabel}
 学年: ${grade}
 元の問題: ${originalQuestion || "（写真の問題）"}
 提示済みのヒント1: ${hints?.hint1 ?? ""}
 提示済みのヒント2: ${hints?.hint2 ?? ""}
-提示済みのヒント3: ${hints?.hint3 ?? ""}
-`.trim();
+提示済みのヒント3: ${hints?.hint3 ?? ""}`;
 
-  // 会話履歴をテキストに変換
-  const conversationHistory = messages
-    .map((m) => `${m.role === "student" ? "生徒" : "先生"}: ${m.content}`)
-    .join("\n");
-
-  const fullPrompt = `${CHAT_SYSTEM_PROMPT}
+    fullPrompt = `${FOLLOWUP_SYSTEM_PROMPT}
 
 ${contextBlock}
 
@@ -80,6 +113,7 @@ ${contextBlock}
 ${conversationHistory}
 
 先生:`;
+  }
 
   try {
     const result = await model.generateContent(fullPrompt);

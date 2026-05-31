@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import HintCard from "./HintCard";
 import ImageCropper from "./ImageCropper";
 import ChatBox from "./ChatBox";
+import StandaloneChat from "./StandaloneChat";
 
 type SchoolLevel = "elementary" | "middle" | "high";
 
@@ -219,6 +220,9 @@ export default function ChatInterface() {
     { level: "high", label: "高校" },
   ];
 
+  type AppMode = "hint" | "chat";
+  const [appMode, setAppMode] = useState<AppMode>("hint");
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-indigo-700 text-white px-4 py-3 flex items-center justify-between shadow">
@@ -234,8 +238,38 @@ export default function ChatInterface() {
         </button>
       </header>
 
+      {/* モード切り替えタブ */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-2xl mx-auto flex">
+          <button
+            onClick={() => setAppMode("hint")}
+            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-1.5 border-b-2 transition ${
+              appMode === "hint"
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <span>💡</span> ヒントモード
+          </button>
+          <button
+            onClick={() => setAppMode("chat")}
+            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-1.5 border-b-2 transition ${
+              appMode === "chat"
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <span>💬</span> チャットモード
+          </button>
+        </div>
+      </div>
+
       <main className="flex-1 max-w-2xl mx-auto w-full p-4 space-y-4">
-        {cropSrc && (
+        {/* チャットモード */}
+        {appMode === "chat" && <StandaloneChat />}
+
+        {/* ヒントモード */}
+        {appMode === "hint" && cropSrc && (
           <div className="bg-white rounded-2xl shadow p-4">
             <ImageCropper
               src={cropSrc}
@@ -246,7 +280,7 @@ export default function ChatInterface() {
           </div>
         )}
 
-        {!cropSrc && !result ? (
+        {appMode === "hint" && !cropSrc && !result ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="bg-white rounded-2xl shadow p-4 space-y-3">
               {/* 学校区分タブ */}
@@ -380,7 +414,7 @@ export default function ChatInterface() {
               </button>
             </div>
           </form>
-        ) : !cropSrc && result ? (
+        ) : appMode === "hint" && !cropSrc && result ? (
           <div className="space-y-3">
             <div className="bg-white rounded-2xl shadow p-4 space-y-2">
               <div className="flex items-center gap-2">
