@@ -20,8 +20,8 @@ const FOLLOWUP_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠
 - 励ましの言葉を添える
 - 返答は日本語のみ、マークダウンは使わない`;
 
-// チャットモード（自由な質問）用
-const STANDALONE_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠した家庭教師です。
+// チャットモード：勉強
+const STUDY_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準拠した家庭教師です。
 生徒がチャット形式で学習の質問をしてきます。
 
 指導方針：
@@ -32,7 +32,22 @@ const STANDALONE_SYSTEM_PROMPT = `あなたは日本の学習指導要領に準�
 - 学年に合った言葉づかいをする（小学生：やさしく具体的、中学生：丁寧、高校生：専門用語OK）
 - 1回の返答は簡潔に。長くなりそうなら段階的に分けて答える
 - 返答は日本語のみ、マークダウンは使わない
-- 最初の挨拶は「こんにちは！何でも気軽に質問してね😊」`;
+- 最初の挨拶は「こんにちは！勉強で困っていることがあれば何でも聞いてね😊」`;
+
+// チャットモード：相談
+const CONSULT_SYSTEM_PROMPT = `あなたは生徒の話をよく聞く、信頼できる塾の先生です。
+生徒が勉強・学校生活・進路・人間関係などの悩みを相談してきます。
+
+対応方針：
+- まず話をしっかり聞き、気持ちに寄り添う
+- 共感の言葉を先に伝えてから、アドバイスや提案をする
+- 「それはつらかったね」「よく話してくれたね」など受け止める言葉を大切に
+- アドバイスは押しつけず「こういう方法もあるよ」と柔らかく提案する
+- 深刻な悩み（いじめ・不登校など）には、保護者や学校の先生への相談も促す
+- 学年に合った言葉づかいをする（小学生：やさしい言葉、中高生：対等な言葉）
+- 短めの返答で安心感を与える。説教にならないよう注意する
+- 返答は日本語のみ、マークダウンは使わない
+- 最初の挨拶は「こんにちは！何か困っていることや悩んでいることがあったら、気軽に話してね🤝」`;
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
@@ -48,13 +63,15 @@ export async function POST(request: Request) {
     originalQuestion,
     hints,
     mode = "followup",
+    chatType = "study",
   } = await request.json() as {
     messages: ChatMessage[];
-    subject: string;
+    subject?: string;
     grade: string;
     originalQuestion?: string;
     hints?: { hint1: string; hint2: string; hint3: string };
     mode?: "followup" | "standalone";
+    chatType?: "study" | "consult";
   };
 
   if (!messages?.length) {
@@ -77,8 +94,6 @@ export async function POST(request: Request) {
   const genAI = getGenAI(apiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
 
-  const subjectLabel = SUBJECT_LABELS[subject] ?? subject ?? "全般";
-
   const conversationHistory = messages
     .map((m) => `${m.role === "student" ? "生徒" : "先生"}: ${m.content}`)
     .join("\n");
@@ -86,10 +101,10 @@ export async function POST(request: Request) {
   let fullPrompt: string;
 
   if (mode === "standalone") {
-    fullPrompt = `${STANDALONE_SYSTEM_PROMPT}
+    const systemPrompt = chatType === "consult" ? CONSULT_SYSTEM_PROMPT : STUDY_SYSTEM_PROMPT;
+    fullPrompt = `${systemPrompt}
 
-【授業情報】
-教科: ${subjectLabel}
+【生徒情報】
 学年: ${grade}
 
 【会話履歴】
@@ -97,6 +112,8 @@ ${conversationHistory}
 
 先生:`;
   } else {
+    // ヒントモードのフォローアップ
+    const subjectLabel = SUBJECT_LABELS[subject ?? ""] ?? subject ?? "全般";
     const contextBlock = `【授業のコンテキスト】
 教科: ${subjectLabel}
 学年: ${grade}

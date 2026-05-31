@@ -4,35 +4,9 @@ import { useState, useRef, useEffect } from "react";
 import type { ChatMessage } from "@/app/api/chat/route";
 
 type SchoolLevel = "elementary" | "middle" | "high";
+type ChatType    = "study" | "consult";
 
-type Subject = { value: string; label: string; emoji: string; school: SchoolLevel | "all" };
-type Grade   = { value: string; label: string; school: SchoolLevel };
-
-const SUBJECTS: Subject[] = [
-  { value: "arithmetic",   label: "算数",          emoji: "🔢", school: "elementary" },
-  { value: "math_middle",  label: "数学",          emoji: "📐", school: "middle" },
-  { value: "math_high",    label: "数学",          emoji: "📐", school: "high" },
-  { value: "physics",      label: "物理",          emoji: "⚡", school: "high" },
-  { value: "chemistry",    label: "化学",          emoji: "🧪", school: "high" },
-  { value: "biology",      label: "生物",          emoji: "🌿", school: "high" },
-  { value: "earth_science",label: "地学",          emoji: "🌏", school: "high" },
-  { value: "j_lit",        label: "現代文",        emoji: "📰", school: "high" },
-  { value: "classical",    label: "古文・漢文",    emoji: "📜", school: "high" },
-  { value: "world_history",label: "世界史",        emoji: "🏛️", school: "high" },
-  { value: "jpn_history",  label: "日本史",        emoji: "⛩️", school: "high" },
-  { value: "geography",    label: "地理",          emoji: "🗾", school: "high" },
-  { value: "civics",       label: "政治・経済・倫理", emoji: "⚖️", school: "high" },
-  { value: "info",         label: "情報",          emoji: "💻", school: "high" },
-  { value: "japanese",     label: "国語",          emoji: "📖", school: "all" },
-  { value: "science",      label: "理科",          emoji: "🔬", school: "all" },
-  { value: "social",       label: "社会",          emoji: "🌍", school: "all" },
-  { value: "english",      label: "英語",          emoji: "🗣️", school: "all" },
-  { value: "moral",        label: "道徳",          emoji: "🌱", school: "all" },
-  { value: "music",        label: "音楽",          emoji: "🎵", school: "all" },
-  { value: "art",          label: "図画工作・美術", emoji: "🎨", school: "all" },
-  { value: "pe",           label: "体育・保健",    emoji: "⚽", school: "all" },
-  { value: "home",         label: "家庭科・技術",  emoji: "🍳", school: "all" },
-];
+type Grade = { value: string; label: string; school: SchoolLevel };
 
 const GRADES: Grade[] = [
   { value: "小学1年生", label: "小1", school: "elementary" },
@@ -49,34 +23,33 @@ const GRADES: Grade[] = [
   { value: "高校3年生", label: "高3", school: "high" },
 ];
 
-const DEFAULT_SUBJECT: Record<SchoolLevel, string> = {
-  elementary: "arithmetic",
-  middle: "math_middle",
-  high: "math_high",
-};
-const DEFAULT_GRADE: Record<SchoolLevel, string> = {
-  elementary: "小学4年生",
-  middle: "中学1年生",
-  high: "高校1年生",
-};
-
 const SCHOOL_TABS: { level: SchoolLevel; label: string }[] = [
   { level: "elementary", label: "小学校" },
   { level: "middle",     label: "中学校" },
   { level: "high",       label: "高校" },
 ];
 
+const DEFAULT_GRADE: Record<SchoolLevel, string> = {
+  elementary: "小学4年生",
+  middle:     "中学1年生",
+  high:       "高校1年生",
+};
+
+const CHAT_TYPE_OPTIONS: { type: ChatType; emoji: string; label: string; desc: string }[] = [
+  { type: "study",   emoji: "📚", label: "勉強",  desc: "わからないことを先生に聞く" },
+  { type: "consult", emoji: "🤝", label: "相談",  desc: "悩みや困ったことを話す" },
+];
+
 export default function StandaloneChat() {
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>("elementary");
-  const [grade,   setGrade]   = useState("小学4年生");
-  const [subject, setSubject] = useState("arithmetic");
-  const [settingsOpen, setSettingsOpen] = useState(true);
-  const [started, setStarted] = useState(false);
+  const [grade,       setGrade]       = useState("小学4年生");
+  const [chatType,    setChatType]    = useState<ChatType>("study");
+  const [started,     setStarted]     = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input,   setInput]   = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
+  const [input,    setInput]    = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -88,12 +61,9 @@ export default function StandaloneChat() {
   function handleSchoolChange(level: SchoolLevel) {
     setSchoolLevel(level);
     setGrade(DEFAULT_GRADE[level]);
-    setSubject(DEFAULT_SUBJECT[level]);
   }
 
-  // チャット開始：先生のあいさつを取得
   async function handleStart() {
-    setSettingsOpen(false);
     setStarted(true);
     setLoading(true);
 
@@ -102,7 +72,12 @@ export default function StandaloneChat() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: greetingMessages, subject, grade, mode: "standalone" }),
+      body: JSON.stringify({
+        messages: greetingMessages,
+        grade,
+        chatType,
+        mode: "standalone",
+      }),
     });
 
     setLoading(false);
@@ -126,7 +101,7 @@ export default function StandaloneChat() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: newMessages, subject, grade, mode: "standalone" }),
+      body: JSON.stringify({ messages: newMessages, grade, chatType, mode: "standalone" }),
     });
 
     setLoading(false);
@@ -159,42 +134,61 @@ export default function StandaloneChat() {
     setInput("");
     setError("");
     setStarted(false);
-    setSettingsOpen(true);
   }
 
-  const filteredSubjects = SUBJECTS.filter(
-    (s) => s.school === schoolLevel || s.school === "all"
-  );
   const filteredGrades = GRADES.filter((g) => g.school === schoolLevel);
+  const currentType    = CHAT_TYPE_OPTIONS.find((o) => o.type === chatType)!;
 
-  // ---- 設定パネル ----
+  // ---- 開始前の設定画面 ----
   if (!started) {
     return (
       <div className="space-y-4">
-        <div className="bg-white rounded-2xl shadow p-4 space-y-3">
-          <p className="text-sm font-medium text-gray-700">学年・教科を選んでチャットを始めよう</p>
+        <div className="bg-white rounded-2xl shadow p-5 space-y-4">
 
-          {/* 学校区分 */}
-          <div className="flex rounded-xl overflow-hidden border border-indigo-200">
-            {SCHOOL_TABS.map(({ level, label }) => (
-              <button
-                key={level}
-                type="button"
-                onClick={() => handleSchoolChange(level)}
-                className={`flex-1 py-2 text-sm font-bold transition ${
-                  schoolLevel === level
-                    ? "bg-indigo-600 text-white"
-                    : "text-indigo-600 hover:bg-indigo-50"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          {/* 勉強 or 相談 */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-2">何について話しますか？</p>
+            <div className="grid grid-cols-2 gap-3">
+              {CHAT_TYPE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.type}
+                  type="button"
+                  onClick={() => setChatType(opt.type)}
+                  className={`flex flex-col items-center gap-1.5 py-4 rounded-2xl border-2 transition ${
+                    chatType === opt.type
+                      ? "border-indigo-500 bg-indigo-50"
+                      : "border-gray-200 hover:border-indigo-200"
+                  }`}
+                >
+                  <span className="text-3xl">{opt.emoji}</span>
+                  <span className={`font-bold text-base ${chatType === opt.type ? "text-indigo-700" : "text-gray-700"}`}>
+                    {opt.label}
+                  </span>
+                  <span className="text-xs text-gray-400">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* 学年 */}
+          {/* 学校区分 */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">学年</label>
+            <p className="text-xs font-medium text-gray-500 mb-2">学年</p>
+            <div className="flex rounded-xl overflow-hidden border border-indigo-200 mb-2">
+              {SCHOOL_TABS.map(({ level, label }) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => handleSchoolChange(level)}
+                  className={`flex-1 py-2 text-sm font-bold transition ${
+                    schoolLevel === level
+                      ? "bg-indigo-600 text-white"
+                      : "text-indigo-600 hover:bg-indigo-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap gap-2">
               {filteredGrades.map((g) => (
                 <button
@@ -213,34 +207,12 @@ export default function StandaloneChat() {
             </div>
           </div>
 
-          {/* 教科 */}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">教科</label>
-            <div className="flex flex-wrap gap-2">
-              {filteredSubjects.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={() => setSubject(s.value)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition flex items-center gap-1 ${
-                    subject === s.value
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "border-gray-300 text-gray-600 hover:border-indigo-400"
-                  }`}
-                >
-                  <span>{s.emoji}</span>
-                  <span>{s.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <button
             onClick={handleStart}
             className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2"
           >
-            <span>💬</span>
-            先生とチャットを始める
+            <span>{currentType.emoji}</span>
+            {currentType.label}を始める
           </button>
         </div>
       </div>
@@ -249,23 +221,22 @@ export default function StandaloneChat() {
 
   // ---- チャット画面 ----
   return (
-    <div className="flex flex-col" style={{ height: "calc(100dvh - 120px)" }}>
-      {/* 教科バッジ＋リセット */}
+    <div className="flex flex-col" style={{ height: "calc(100dvh - 130px)" }}>
+      {/* バッジ＋変更ボタン */}
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="flex items-center gap-2">
           <span className="text-xs bg-indigo-100 text-indigo-700 font-medium px-2 py-1 rounded-full">
             {grade}
           </span>
           <span className="text-xs bg-indigo-100 text-indigo-700 font-medium px-2 py-1 rounded-full">
-            {SUBJECTS.find((s) => s.value === subject)?.emoji}{" "}
-            {SUBJECTS.find((s) => s.value === subject)?.label}
+            {currentType.emoji} {currentType.label}
           </span>
         </div>
         <button
           onClick={handleReset}
           className="text-xs text-gray-400 hover:text-gray-600 transition"
         >
-          学年・教科を変える
+          最初に戻る
         </button>
       </div>
 
@@ -280,10 +251,12 @@ export default function StandaloneChat() {
               className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
                 msg.role === "student"
                   ? "bg-indigo-100 text-indigo-700"
+                  : chatType === "consult"
+                  ? "bg-green-100 text-green-700"
                   : "bg-yellow-100 text-yellow-700"
               }`}
             >
-              {msg.role === "student" ? "👤" : "👩‍🏫"}
+              {msg.role === "student" ? "👤" : chatType === "consult" ? "🤝" : "👩‍🏫"}
             </div>
             <div
               className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
@@ -299,8 +272,10 @@ export default function StandaloneChat() {
 
         {loading && (
           <div className="flex gap-2">
-            <div className="w-8 h-8 rounded-full bg-yellow-100 text-yellow-700 flex items-center justify-center text-sm flex-shrink-0">
-              👩‍🏫
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${
+              chatType === "consult" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+            }`}>
+              {chatType === "consult" ? "🤝" : "👩‍🏫"}
             </div>
             <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3">
               <span className="flex gap-1">
@@ -313,7 +288,6 @@ export default function StandaloneChat() {
         )}
 
         {error && <p className="text-center text-xs text-red-500">{error}</p>}
-
         <div ref={bottomRef} />
       </div>
 
@@ -324,7 +298,7 @@ export default function StandaloneChat() {
           value={input}
           onChange={handleTextareaInput}
           onKeyDown={handleKeyDown}
-          placeholder="質問を入力（Enterで送信 / Shift+Enterで改行）"
+          placeholder={chatType === "study" ? "質問を入力（Enterで送信）" : "話したいことを入力（Enterで送信）"}
           rows={1}
           disabled={loading}
           className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 overflow-hidden"
