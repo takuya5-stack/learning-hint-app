@@ -93,9 +93,9 @@ export default function ChatInterface() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>("elementary");
-  const [grade, setGrade] = useState("小学4年生");
-  const [subject, setSubject] = useState("arithmetic");
+  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>("middle");
+  const [grade, setGrade] = useState("中学1年生");
+  const [subject, setSubject] = useState("math_middle");
   const [question, setQuestion] = useState("");
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
