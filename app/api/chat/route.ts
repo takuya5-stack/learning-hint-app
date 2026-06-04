@@ -5,6 +5,7 @@ import { SUBJECT_LABELS } from "@/app/api/hint/route";
 export type ChatMessage = {
   role: "student" | "tutor";
   content: string;
+  imagePreview?: string; // 表示用のみ（base64 data URL）
 };
 
 // ヒントモードのフォローアップ用
@@ -58,6 +59,10 @@ const CONSULT_SYSTEM_PROMPT = `あなたは生徒の話をよく聞く、信頼�
 - 返答は日本語のみ、マークダウンは使わない
 - 最初の挨拶は「こんにちは！困っていることや悩んでいることがあったら、気軽に話してね🤝」`;
 
+type ContentPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
 export async function POST(request: Request) {
   const cookieStore = await cookies();
   const auth = cookieStore.get("auth_token");
@@ -73,6 +78,8 @@ export async function POST(request: Request) {
     hints,
     mode = "followup",
     chatType = "study",
+    imageBase64,
+    imageMimeType,
   } = await request.json() as {
     messages: ChatMessage[];
     subject?: string;
@@ -81,6 +88,8 @@ export async function POST(request: Request) {
     hints?: { hint1: string; hint2: string; hint3: string };
     mode?: "followup" | "standalone";
     chatType?: "study" | "consult";
+    imageBase64?: string;
+    imageMimeType?: string;
   };
 
   if (!messages?.length) {
@@ -103,15 +112,23 @@ export async function POST(request: Request) {
   const genAI = getGenAI(apiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
 
+  const hasImage = typeof imageBase64 === "string" && imageBase64.length > 0;
+
+  // 会話履歴テキスト（imagePreviewはAPIに不要なので無視）
   const conversationHistory = messages
-    .map((m) => `${m.role === "student" ? "生徒" : "先生"}: ${m.content}`)
+    .map((m) => {
+      const who = m.role === "student" ? "生徒" : "先生";
+      const imgNote = m.imagePreview ? "（画像あり）" : "";
+      return `${who}: ${m.content}${imgNote}`;
+    })
     .join("\n");
 
-  let fullPrompt: string;
+  // プロンプト文字列を組み立て
+  let promptText: string;
 
   if (mode === "standalone") {
     const systemPrompt = chatType === "consult" ? CONSULT_SYSTEM_PROMPT : STUDY_SYSTEM_PROMPT;
-    fullPrompt = `${systemPrompt}
+    promptText = `${systemPrompt}
 
 【生徒情報】
 学年: ${grade}
@@ -121,19 +138,16 @@ ${conversationHistory}
 
 先生:`;
   } else {
-    // ヒントモードのフォローアップ
     const subjectLabel = SUBJECT_LABELS[subject ?? ""] ?? subject ?? "全般";
-    const contextBlock = `【授業のコンテキスト】
+    promptText = `${FOLLOWUP_SYSTEM_PROMPT}
+
+【授業のコンテキスト】
 教科: ${subjectLabel}
 学年: ${grade}
 元の問題: ${originalQuestion || "（写真の問題）"}
 提示済みのヒント1: ${hints?.hint1 ?? ""}
 提示済みのヒント2: ${hints?.hint2 ?? ""}
-提示済みのヒント3: ${hints?.hint3 ?? ""}`;
-
-    fullPrompt = `${FOLLOWUP_SYSTEM_PROMPT}
-
-${contextBlock}
+提示済みのヒント3: ${hints?.hint3 ?? ""}
 
 【会話履歴】
 ${conversationHistory}
@@ -141,8 +155,19 @@ ${conversationHistory}
 先生:`;
   }
 
+  // 画像があればコンテンツ配列形式で送る
+  const contentParts: ContentPart[] = [{ text: promptText }];
+  if (hasImage) {
+    contentParts.push({
+      inlineData: {
+        mimeType: imageMimeType ?? "image/jpeg",
+        data: imageBase64!,
+      },
+    });
+  }
+
   try {
-    const result = await model.generateContent(fullPrompt);
+    const result = await model.generateContent(contentParts);
     const reply = result.response.text().trim();
     return Response.json({ reply });
   } catch (err) {

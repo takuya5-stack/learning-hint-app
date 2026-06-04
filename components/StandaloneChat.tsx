@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { ChatMessage } from "@/app/api/chat/route";
+import ImageCropper from "./ImageCropper";
 
 type SchoolLevel = "elementary" | "middle" | "high";
 type ChatType    = "study" | "consult";
@@ -51,8 +52,14 @@ export default function StandaloneChat() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
 
+  // 画像関連
+  const [cropSrc,      setCropSrc]      = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageData,    setImageData]    = useState<{ base64: string; mimeType: string } | null>(null);
+
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -63,21 +70,54 @@ export default function StandaloneChat() {
     setGrade(DEFAULT_GRADE[level]);
   }
 
+  // ---- 画像処理 ----
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCropSrc(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleCropConfirm(croppedDataUrl: string, croppedBase64: string, mimeType: string) {
+    setImagePreview(croppedDataUrl);
+    setImageData({ base64: croppedBase64, mimeType });
+    setCropSrc(null);
+  }
+
+  function handleCropUseWhole() {
+    if (!cropSrc) return;
+    const [meta, base64] = cropSrc.split(",");
+    const mimeType = meta.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+    setImagePreview(cropSrc);
+    setImageData({ base64, mimeType });
+    setCropSrc(null);
+  }
+
+  function handleCropCancel() {
+    setCropSrc(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeImage() {
+    setImagePreview(null);
+    setImageData(null);
+    setCropSrc(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  // ---- チャット開始 ----
   async function handleStart() {
     setStarted(true);
     setLoading(true);
 
     const greetingMessages: ChatMessage[] = [{ role: "student", content: "はじめまして" }];
-
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: greetingMessages,
-        grade,
-        chatType,
-        mode: "standalone",
-      }),
+      body: JSON.stringify({ messages: greetingMessages, grade, chatType, mode: "standalone" }),
     });
 
     setLoading(false);
@@ -87,21 +127,42 @@ export default function StandaloneChat() {
     }
   }
 
+  // ---- メッセージ送信 ----
   async function handleSend() {
     const text = input.trim();
-    if (!text || loading) return;
+    if ((!text && !imageData) || loading) return;
 
-    const newMessages: ChatMessage[] = [...messages, { role: "student", content: text }];
+    // 表示用メッセージ（imagePreviewを含む）
+    const newMessage: ChatMessage = {
+      role: "student",
+      content: text || "（画像を送りました）",
+      imagePreview: imagePreview ?? undefined,
+    };
+    const newMessages: ChatMessage[] = [...messages, newMessage];
     setMessages(newMessages);
     setInput("");
     setError("");
     setLoading(true);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
+    // 送信後に画像をクリア
+    const sentImageData = imageData;
+    setImagePreview(null);
+    setImageData(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: newMessages, grade, chatType, mode: "standalone" }),
+      body: JSON.stringify({
+        // APIに渡すmessages: imagePreviewは除外してサイズを減らす
+        messages: newMessages.map(({ role, content }) => ({ role, content })),
+        grade,
+        chatType,
+        mode: "standalone",
+        imageBase64:  sentImageData?.base64 ?? null,
+        imageMimeType: sentImageData?.mimeType ?? null,
+      }),
     });
 
     setLoading(false);
@@ -134,18 +195,34 @@ export default function StandaloneChat() {
     setInput("");
     setError("");
     setStarted(false);
+    setImagePreview(null);
+    setImageData(null);
+    setCropSrc(null);
   }
 
-  const filteredGrades = GRADES.filter((g) => g.school === schoolLevel);
-  const currentType    = CHAT_TYPE_OPTIONS.find((o) => o.type === chatType)!;
+  const filteredGrades  = GRADES.filter((g) => g.school === schoolLevel);
+  const currentType     = CHAT_TYPE_OPTIONS.find((o) => o.type === chatType)!;
+  const canSend         = !loading && (input.trim().length > 0 || imageData !== null);
+
+  // ---- クロッパー表示中 ----
+  if (cropSrc) {
+    return (
+      <div className="bg-white rounded-2xl shadow p-4">
+        <ImageCropper
+          src={cropSrc}
+          onConfirm={handleCropConfirm}
+          onUseWhole={handleCropUseWhole}
+          onCancel={handleCropCancel}
+        />
+      </div>
+    );
+  }
 
   // ---- 開始前の設定画面 ----
   if (!started) {
     return (
       <div className="space-y-4">
         <div className="bg-white rounded-2xl shadow p-5 space-y-4">
-
-          {/* 勉強 or 相談 */}
           <div>
             <p className="text-xs font-medium text-gray-500 mb-2">何について話しますか？</p>
             <div className="grid grid-cols-2 gap-3">
@@ -170,7 +247,6 @@ export default function StandaloneChat() {
             </div>
           </div>
 
-          {/* 学校区分 */}
           <div>
             <p className="text-xs font-medium text-gray-500 mb-2">学年</p>
             <div className="flex rounded-xl overflow-hidden border border-indigo-200 mb-2">
@@ -258,14 +334,28 @@ export default function StandaloneChat() {
             >
               {msg.role === "student" ? "👤" : chatType === "consult" ? "🤝" : "👩‍🏫"}
             </div>
-            <div
-              className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                msg.role === "student"
-                  ? "bg-indigo-600 text-white rounded-tr-sm"
-                  : "bg-gray-100 text-gray-800 rounded-tl-sm"
-              }`}
-            >
-              {msg.content}
+            <div className={`max-w-[78%] space-y-1 ${msg.role === "student" ? "items-end flex flex-col" : ""}`}>
+              {/* 画像 */}
+              {msg.imagePreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={msg.imagePreview}
+                  alt="送った画像"
+                  className="max-w-full max-h-48 rounded-xl border border-gray-200 object-contain bg-gray-50"
+                />
+              )}
+              {/* テキストバブル */}
+              {msg.content && (
+                <div
+                  className={`px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                    msg.role === "student"
+                      ? "bg-indigo-600 text-white rounded-tr-sm"
+                      : "bg-gray-100 text-gray-800 rounded-tl-sm"
+                  }`}
+                >
+                  {msg.content}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -292,27 +382,68 @@ export default function StandaloneChat() {
       </div>
 
       {/* 入力エリア */}
-      <div className="mt-2 bg-white rounded-2xl shadow flex gap-2 items-end p-3">
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={handleTextareaInput}
-          onKeyDown={handleKeyDown}
-          placeholder={chatType === "study" ? "質問を入力（Enterで送信）" : "話したいことを入力（Enterで送信）"}
-          rows={1}
-          disabled={loading}
-          className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 overflow-hidden"
-          style={{ minHeight: "38px" }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!input.trim() || loading}
-          className="flex-shrink-0 w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-          </svg>
-        </button>
+      <div className="mt-2 bg-white rounded-2xl shadow p-3 space-y-2">
+        {/* 画像プレビュー */}
+        {imagePreview && (
+          <div className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imagePreview}
+              alt="添付画像"
+              className="h-20 rounded-xl border border-gray-200 object-contain bg-gray-50"
+            />
+            <button
+              onClick={removeImage}
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-2 items-end">
+          {/* 画像ボタン */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex-shrink-0 w-10 h-10 border border-gray-300 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-50 transition text-lg"
+            title="画像を送る"
+          >
+            📷
+          </button>
+
+          {/* テキスト入力 */}
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleTextareaInput}
+            onKeyDown={handleKeyDown}
+            placeholder={chatType === "study" ? "質問を入力（Enterで送信）" : "話したいことを入力（Enterで送信）"}
+            rows={1}
+            disabled={loading}
+            className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 overflow-hidden"
+            style={{ minHeight: "38px" }}
+          />
+
+          {/* 送信ボタン */}
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="flex-shrink-0 w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );
